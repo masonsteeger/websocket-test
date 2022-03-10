@@ -3,6 +3,7 @@ import "./App.css";
 import Sockette from "sockette";
 import { useEffect, useState } from "react";
 import update from "immutability-helper";
+
 let ws = null;
 
 function App() {
@@ -19,6 +20,19 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!currentProject) {
+      ws && ws.close();
+      ws = null;
+    } else {
+      ws.json({
+        action: "onMessage",
+        message: { type: "connect", projectID: currentProject, userID: userID },
+      });
+      setConnection(true);
+    }
+  }, [currentProject]);
+
   const runCall = (projID) => {
     console.log(projID);
     if (ws !== null) {
@@ -31,22 +45,34 @@ function App() {
         maxAttempts: 10,
         onopen: (e) => {
           console.log("Connected!", e);
-          setConnection(true);
+          setCurrentProject(projID);
         },
         onmessage: (e) => {
           console.log("Received:", e);
           const myData = JSON.parse(e.data);
-          setAllText((p) => {
-            p = update(p, {
-              $push: [{ id: myData.userID, text: myData.text }],
-            });
-            return p;
-          });
+          switch (myData.type) {
+            case "connect":
+              console.log(
+                `User ${myData.userID} has connected to ${myData.projectID}`
+              );
+              break;
+            case "post":
+              setAllText((p) => {
+                p = update(p, {
+                  $push: [{ id: myData.userID, text: myData.text }],
+                });
+                return p;
+              });
+              break;
+            default:
+              return null;
+          }
         },
         onreconnect: (e) => console.log("Reconnecting...", e),
         onmaximum: (e) => console.log("Stop Attempting!", e),
         onclose: (e) => {
           console.log("Closed!", e);
+          setCurrentProject(null);
           setConnection(false);
         },
         onerror: (e) => console.log("Error:", e),
@@ -62,7 +88,12 @@ function App() {
   const sendMessage = (text) => {
     ws.json({
       action: "onMessage",
-      message: { type: "post", text: text, userID: userID },
+      message: {
+        type: "post",
+        projectID: currentProject,
+        text: text,
+        userID: userID,
+      },
     });
   };
 
@@ -122,7 +153,7 @@ function App() {
             >
               {connection ? (
                 <div style={{ display: "flex", flexDirection: "column" }}>
-                  <p>"Connected!"</p>
+                  <p>Connected to {currentProject}</p>
                   <div>
                     <input
                       type="text"
